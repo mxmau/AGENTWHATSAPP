@@ -33,7 +33,9 @@ CRITÉRIOS PARA EXTRAIR UMA TAREFA:
 5. Se a mensagem disser "preciso", "preciso preparar", "tenho que", "vou precisar", "quero", "criar", "fazer", "resolver", "lembrar", "avisar", "preparar", "montar", "gerar", "analisar", "responder", "comprar", "marcar" ou equivalente, trate como tarefa.
 6. Em grupos, extraia tarefas que pareçam relevantes para o usuário, escola, igreja, família ou trabalho.
 7. Quando alguém expressar uma necessidade, extraia a tarefa implícita e sugira um agente que facilitaria aquilo, mesmo que a pessoa não peça explicitamente "crie um agente".
-8. Não extraia saudações, agradecimentos, conversas soltas, memes, confirmações sem ação ou mensagens puramente informativas sem necessidade de acompanhamento.
+8. Quando alguém declarar uma dor, dificuldade, desorganização, incômodo, gargalo ou desejo de melhorar algo, transforme isso em uma tarefa implícita e sugira um agente de apoio.
+9. Frases como "está uma bagunça", "não estou dando conta", "seria bom", "preciso melhorar", "queria um jeito", "tá difícil", "não consigo organizar", "estou perdido" indicam necessidade e devem virar tarefa.
+10. Não extraia saudações, agradecimentos, conversas soltas, memes, confirmações sem ação ou mensagens puramente informativas sem necessidade de acompanhamento.
 
 EXEMPLOS DO QUE DEVE VIRAR TAREFA:
 - "criar um agente de design" -> tarefa tipo "criar_agente", prioridade média, agente_sugerido "Agente de Design".
@@ -45,6 +47,9 @@ EXEMPLOS DO QUE DEVE VIRAR TAREFA:
 - "vou precisar organizar a escala dos obreiros" -> tarefa tipo "documento", agente_sugerido "Agente Organizador de Escalas".
 - "quero montar uma apresentação para domingo" -> tarefa tipo "design" ou "documento", agente_sugerido "Agente de Apresentações".
 - "tenho que analisar essas mensagens depois" -> tarefa tipo "analise", agente_sugerido "Agente Analista de Mensagens".
+- "meu horário tá uma bagunça, seria bom que eu pudesse organizar ele" -> tarefa tipo "organização", agente_sugerido "Agente Organizador de Horários".
+- "não estou dando conta das tarefas da escola" -> tarefa tipo "organização", agente_sugerido "Agente Gestor de Tarefas Escolares".
+- "queria um jeito de controlar melhor os compromissos da igreja" -> tarefa tipo "organização", agente_sugerido "Agente de Compromissos da Igreja".
 
 EXEMPLOS DO QUE NÃO DEVE VIRAR TAREFA:
 - "bom dia".
@@ -67,7 +72,7 @@ Responda com JSON no formato:
       "prioridade": "alta|media|baixa",
       "prazo": "data/hora se mencionado, ou null",
       "origem": "nome de quem pediu ou mencionou",
-      "tipo": "criar_agente|design|lembrete|resposta|acao|evento|compra|documento|aula|pesquisa|analise|outro",
+      "tipo": "criar_agente|design|lembrete|resposta|acao|evento|compra|documento|aula|pesquisa|analise|organizacao|outro",
       "agente_sugerido": "nome descritivo de um agente que poderia resolver isso automaticamente",
       "evidencia": "trecho curto da mensagem que justificou a tarefa"
     }
