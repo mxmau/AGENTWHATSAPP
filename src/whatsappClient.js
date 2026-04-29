@@ -160,9 +160,9 @@ export async function fetchRecentMessages(chatName, hoursBack = 12) {
 
   const cutoff = Math.floor((Date.now() - hoursBack * 3600 * 1000) / 1000)
   const match = findChatByName(chatName)
-  const chat = match?.chat
+  const matchedCandidates = match?.matchedCandidates || []
 
-  if (!chat) {
+  if (!matchedCandidates.length) {
     console.warn(`[WhatsApp] Chat não encontrado: "${chatName}"`)
     console.warn(`[WhatsApp] Candidatos parecidos para "${chatName}": ${formatChatCandidates(match?.candidates || [])}`)
     return {
@@ -175,16 +175,37 @@ export async function fetchRecentMessages(chatName, hoursBack = 12) {
     }
   }
 
-  const messages = extractMessagesFromStore(chat.id, cutoff, getChatDisplayName(chat))
-  console.log(`[WhatsApp] Chat encontrado para "${chatName}": "${getChatDisplayName(chat)}" | score ${match.score} | id ${chat.id}`)
+  const messagesByCandidate = matchedCandidates.map(candidate => {
+    const candidateMessages = extractMessagesFromStore(candidate.id, cutoff, candidate.displayName)
+    console.log(`[WhatsApp] Candidato lido para "${chatName}": "${candidate.displayName}" | score ${candidate.score} | mensagens ${candidateMessages.length} | id ${candidate.id}`)
+    return { ...candidate, messages: candidateMessages }
+  })
+
+  const uniqueMessages = new Map()
+  for (const candidate of messagesByCandidate) {
+    for (const message of candidate.messages) {
+      uniqueMessages.set(`${message.timestamp}:${message.from}:${message.body}`, message)
+    }
+  }
+
+  const messages = [...uniqueMessages.values()].sort((a, b) => a.timestampMs - b.timestampMs)
+  const matchedChatNames = matchedCandidates.map(candidate => candidate.displayName).join(', ')
+  const matchedChatIds = matchedCandidates.map(candidate => candidate.id).join(', ')
+
   return {
     messages,
     status: messages.length ? 'ok' : 'empty_window',
     source: chatName,
-    matchedChat: getChatDisplayName(chat),
-    chatId: chat.id,
+    matchedChat: matchedChatNames,
+    chatId: matchedChatIds,
     score: match.score,
     candidates: match.candidates,
+    scannedCandidates: messagesByCandidate.map(candidate => ({
+      name: candidate.displayName,
+      id: candidate.id,
+      score: candidate.score,
+      messages: candidate.messages.length,
+    })),
   }
 }
 
@@ -280,9 +301,14 @@ function findChatByName(chatName) {
 
   const best = candidates[0]
   const minimumScore = 25
+  const matchedCandidates = candidates
+    .filter(candidate => candidate.score >= minimumScore)
+    .slice(0, 5)
+
   return {
     chat: best?.score >= minimumScore ? best.chat : null,
     score: best?.score || 0,
+    matchedCandidates,
     candidates: candidates.slice(0, 8).map(candidate => ({
       name: candidate.displayName,
       id: candidate.id,

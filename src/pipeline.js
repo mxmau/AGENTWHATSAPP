@@ -105,9 +105,12 @@ function logReadResult(readResult, sourceName) {
   const candidates = readResult.candidates?.length
     ? ` | candidatos: ${readResult.candidates.map(candidate => `"${candidate.name}" (${candidate.score})`).join('; ')}`
     : ''
+  const scanned = readResult.scannedCandidates?.length
+    ? ` | candidatos lidos: ${readResult.scannedCandidates.map(candidate => `"${candidate.name}" (${candidate.messages} msgs, score ${candidate.score})`).join('; ')}`
+    : ''
 
   if (readResult.status === 'ok') {
-    console.log(`[Leitura] ${sourceName} | status: ok | mensagens lidas: ${readResult.messages.length}${matched}${score}`)
+    console.log(`[Leitura] ${sourceName} | status: ok | mensagens lidas: ${readResult.messages.length}${matched}${score}${scanned}`)
     return
   }
 
@@ -117,11 +120,11 @@ function logReadResult(readResult, sourceName) {
   }
 
   if (readResult.status === 'empty_window') {
-    console.log(`[Leitura] ${sourceName} | status: sem mensagens | motivo: chat encontrado, mas nenhuma mensagem dentro da janela de varredura${matched}${chatId}${score}`)
+    console.log(`[Leitura] ${sourceName} | status: sem mensagens | motivo: chat encontrado, mas nenhuma mensagem dentro da janela de varredura${matched}${chatId}${score}${scanned}`)
     return
   }
 
-  console.log(`[Leitura] ${sourceName} | status: ${readResult.status || 'desconhecido'} | mensagens: ${readResult.messages?.length || 0}${matched}${chatId}${score}${candidates}`)
+  console.log(`[Leitura] ${sourceName} | status: ${readResult.status || 'desconhecido'} | mensagens: ${readResult.messages?.length || 0}${matched}${chatId}${score}${candidates}${scanned}`)
 }
 
 function logMessagePreview(messages, sourceName) {
