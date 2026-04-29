@@ -8,7 +8,7 @@ import { runPipeline } from './pipeline.js'
 import { listExistingAgents } from './agentManager.js'
 import { loadHistoryAsync } from './runHistory.js'
 import { ensureAgentsDir, restoreAgentsDir } from './agentManager.js'
-import { initPersistence, isPersistenceEnabled } from './persistence.js'
+import { initPersistence, isPersistenceEnabled, listLogsByRecifeDate, saveLogEntry } from './persistence.js'
 
 const app = express()
 const httpServer = createServer(app)
@@ -224,6 +224,12 @@ app.get('/history', async (req, res) => {
   res.json(await loadHistoryAsync())
 })
 
+app.get('/logs', async (req, res) => {
+  const date = req.query.date || getTodayRecifeDate()
+  const limit = Math.min(parseInt(req.query.limit || '1000'), 5000)
+  res.json({ date, logs: await listLogsByRecifeDate(date, { limit }) })
+})
+
 // ── Socket.IO ─────────────────────────────────────────────────────────────────
 io.on('connection', (socket) => {
   socket.emit('status', getStatus())
@@ -243,11 +249,46 @@ clientEvents.on('qr', (url) => io.emit('qr', url))
 clientEvents.on('ready', () => io.emit('status', 'ready'))
 clientEvents.on('disconnected', () => io.emit('status', 'disconnected'))
 
-// Patch console.log to also push to socket
+// Patch console.log/warn/error to also push to socket and persistent storage
 const _log = console.log.bind(console)
+const _warn = console.warn.bind(console)
+const _error = console.error.bind(console)
+
 console.log = (...args) => {
   _log(...args)
-  io.emit('log', args.join(' '))
+  emitAndPersistLog('info', args)
+}
+
+console.warn = (...args) => {
+  _warn(...args)
+  emitAndPersistLog('warn', args)
+}
+
+console.error = (...args) => {
+  _error(...args)
+  emitAndPersistLog('error', args)
+}
+
+function emitAndPersistLog(level, args) {
+  const message = args.map(arg => typeof arg === 'string' ? arg : JSON.stringify(arg)).join(' ')
+  io.emit('log', message)
+  saveLogEntry({ level, source: detectLogSource(message), message }).catch(() => {})
+}
+
+function detectLogSource(message) {
+  const match = message.match(/^\[([^\]]+)\]/)
+  return match?.[1] || 'System'
+}
+
+function getTodayRecifeDate() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Recife',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return `${values.year}-${values.month}-${values.day}`
 }
 
 // ── Cron: 8h e 20h (America/Recife) ──────────────────────────────────────────

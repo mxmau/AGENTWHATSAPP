@@ -27,9 +27,78 @@ export async function initPersistence() {
     )
   `)
 
+  await pool.query(`
+    create table if not exists app_logs (
+      id bigserial primary key,
+      created_at timestamptz not null default now(),
+      recife_date date not null,
+      recife_time text not null,
+      level text not null,
+      source text,
+      message text not null,
+      metadata jsonb not null default '{}'::jsonb
+    )
+  `)
+
+  await pool.query(`
+    create index if not exists app_logs_recife_date_idx
+    on app_logs (recife_date, created_at)
+  `)
+
   initialized = true
   console.log('[Persistence] Banco conectado')
   return true
+}
+
+export async function saveLogEntry({ level = 'info', source = null, message, metadata = {} }) {
+  if (!pool || !message) return false
+  await initPersistence()
+
+  const now = new Date()
+  const recifeParts = getRecifeParts(now)
+
+  await pool.query(
+    `insert into app_logs (created_at, recife_date, recife_time, level, source, message, metadata)
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+    [now.toISOString(), recifeParts.date, recifeParts.time, level, source, message, JSON.stringify(metadata)],
+  )
+
+  return true
+}
+
+export async function listLogsByRecifeDate(date, { limit = 1000 } = {}) {
+  if (!pool) return []
+  await initPersistence()
+
+  const result = await pool.query(
+    `select created_at, recife_date, recife_time, level, source, message, metadata
+     from app_logs
+     where recife_date = $1
+     order by created_at asc
+     limit $2`,
+    [date, limit],
+  )
+
+  return result.rows
+}
+
+function getRecifeParts(date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Recife',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date)
+
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+  return {
+    date: `${values.year}-${values.month}-${values.day}`,
+    time: `${values.hour}:${values.minute}:${values.second}`,
+  }
 }
 
 export async function saveTextFile(key, content) {
@@ -85,4 +154,3 @@ export async function restoreDirectory(dirPath, namespace) {
   console.log(`[Persistence] ${result.rows.length} arquivos restaurados de ${namespace}`)
   return true
 }
-
