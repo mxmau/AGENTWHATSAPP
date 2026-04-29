@@ -24,5 +24,7 @@ services:
         value: ""
       - key: HOURS_LOOKBACK
         value: "12"
+      - key: LOG_MESSAGE_PREVIEW_LIMIT
+        value: "10"
       - key: PORT
         value: "3001"

@@ -21,11 +21,34 @@ export async function extractTasks(messages, sourceLabel) {
     .map(m => `[${m.timestamp}] ${m.from}: ${m.body}`)
     .join('\n')
 
-  const prompt = `Você é um assistente especializado em identificar tarefas, compromissos, pedidos e ações necessárias em conversas de WhatsApp.
-Analise as mensagens e extraia apenas itens que requerem ação concreta.
+  const prompt = `Você é um classificador rigoroso de tarefas em conversas de WhatsApp.
+Seu trabalho é transformar mensagens em tarefas acionáveis para um sistema que cria ou aciona agentes automáticos.
 Responda SOMENTE com JSON válido, sem texto antes ou depois.
 
-Analise as mensagens abaixo do "${sourceLabel}" e extraia todas as tarefas, compromissos, pedidos e ações necessárias.
+CRITÉRIOS PARA EXTRAIR UMA TAREFA:
+1. Extraia quando houver pedido, intenção, ordem, lembrete, compromisso, problema a resolver ou algo que exija próxima ação.
+2. Extraia mesmo que não exista prazo explícito.
+3. Extraia mensagens escritas pelo próprio usuário para si mesmo, pois elas geralmente são comandos ou lembretes.
+4. Extraia pedidos de criação de agentes, automações, materiais, respostas, designs, documentos, aulas, listas, pesquisas ou análises.
+5. Se a mensagem disser "criar", "fazer", "resolver", "lembrar", "avisar", "preparar", "montar", "gerar", "analisar", "responder", "comprar", "marcar" ou equivalente, trate como tarefa.
+6. Em grupos, extraia tarefas que pareçam relevantes para o usuário, escola, igreja, família ou trabalho.
+7. Não extraia saudações, agradecimentos, conversas soltas, memes, confirmações sem ação ou mensagens puramente informativas sem necessidade de acompanhamento.
+
+EXEMPLOS DO QUE DEVE VIRAR TAREFA:
+- "criar um agente de design" -> tarefa tipo "criar_agente", prioridade média, agente_sugerido "Agente de Design".
+- "me lembre de levar o material amanhã" -> tarefa tipo "lembrete".
+- "precisamos mandar a atividade até sexta" -> tarefa tipo "acao" com prazo sexta.
+- "faz uma arte para o culto" -> tarefa tipo "design".
+- "responder a professora sobre a reunião" -> tarefa tipo "resposta".
+
+EXEMPLOS DO QUE NÃO DEVE VIRAR TAREFA:
+- "bom dia".
+- "ok".
+- "kkkk".
+- "obrigado".
+- notícia sem pedido de ação.
+
+Analise as mensagens abaixo do "${sourceLabel}" e extraia todas as tarefas acionáveis.
 
 MENSAGENS:
 ${transcript}
@@ -39,12 +62,14 @@ Responda com JSON no formato:
       "prioridade": "alta|media|baixa",
       "prazo": "data/hora se mencionado, ou null",
       "origem": "nome de quem pediu ou mencionou",
-      "tipo": "lembrete|resposta|acao|evento|compra|outro",
-      "agente_sugerido": "nome descritivo de um agente que poderia resolver isso automaticamente"
+      "tipo": "criar_agente|design|lembrete|resposta|acao|evento|compra|documento|aula|pesquisa|analise|outro",
+      "agente_sugerido": "nome descritivo de um agente que poderia resolver isso automaticamente",
+      "evidencia": "trecho curto da mensagem que justificou a tarefa"
     }
   ]
 }
 
+Se tiver dúvida entre extrair ou ignorar, extraia quando houver verbo de ação ou intenção clara.
 Se não houver tarefas, retorne {"tasks": []}.`
 
   try {

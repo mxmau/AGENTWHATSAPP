@@ -40,6 +40,7 @@ export async function runPipeline() {
         ? await fetchSelfMessages(HOURS_LOOKBACK)
         : await fetchRecentMessages(chatName, HOURS_LOOKBACK)
       console.log(`[Pipeline] ${messages.length} mensagens encontradas em "${isSelf ? 'Meus recados' : chatName}"`)
+      logMessagePreview(messages, isSelf ? 'Meus recados' : chatName)
     } catch (err) {
       console.warn(`[Pipeline] Erro ao ler "${chatName}":`, err.message)
       summary.sources.push({ name: chatName, error: err.message, tasks: [] })
@@ -53,6 +54,7 @@ export async function runPipeline() {
 
     const tasks = await extractTasks(messages, source.label)
     console.log(`[Pipeline] ${tasks.length} tarefas extraídas de "${chatName}"`)
+    logTaskPreview(tasks, isSelf ? 'Meus recados' : chatName)
 
     const sourceSummary = { name: isSelf ? 'Meus recados' : chatName, tasks: [] }
 
@@ -84,6 +86,32 @@ export async function runPipeline() {
 
   console.log(`[Pipeline] Concluído. ${summary.totalTasks} tarefas | ${summary.newAgents.length} agentes criados`)
   return summary
+}
+
+function logMessagePreview(messages, sourceName) {
+  if (!messages.length) return
+
+  const limit = parseInt(process.env.LOG_MESSAGE_PREVIEW_LIMIT || '10')
+  const previewMessages = messages.slice(0, limit)
+
+  for (const message of previewMessages) {
+    const body = String(message.body || '').replace(/\s+/g, ' ').trim()
+    const preview = body.length > 180 ? `${body.slice(0, 180)}...` : body
+    console.log(`[Mensagem] ${sourceName} | ${message.timestamp} | ${message.from}: ${preview}`)
+  }
+
+  if (messages.length > limit) {
+    console.log(`[Mensagem] ${sourceName} | mais ${messages.length - limit} mensagens ocultas no preview`)
+  }
+}
+
+function logTaskPreview(tasks, sourceName) {
+  if (!tasks.length) return
+
+  for (const task of tasks) {
+    const evidence = task.evidencia ? ` | evidência: ${task.evidencia}` : ''
+    console.log(`[Tarefa] ${sourceName} | ${task.tipo} | ${task.prioridade} | ${task.titulo}${evidence}`)
+  }
 }
 
 async function sendTelegramSummary(summary) {
