@@ -101,23 +101,27 @@ function logReadResult(readResult, sourceName) {
 
   const matched = readResult.matchedChat ? ` | chat encontrado: ${readResult.matchedChat}` : ''
   const chatId = readResult.chatId ? ` | id: ${readResult.chatId}` : ''
+  const score = readResult.score ? ` | score: ${readResult.score}` : ''
+  const candidates = readResult.candidates?.length
+    ? ` | candidatos: ${readResult.candidates.map(candidate => `"${candidate.name}" (${candidate.score})`).join('; ')}`
+    : ''
 
   if (readResult.status === 'ok') {
-    console.log(`[Leitura] ${sourceName} | status: ok | mensagens lidas: ${readResult.messages.length}${matched}`)
+    console.log(`[Leitura] ${sourceName} | status: ok | mensagens lidas: ${readResult.messages.length}${matched}${score}`)
     return
   }
 
   if (readResult.status === 'not_found') {
-    console.log(`[Leitura] ${sourceName} | status: falhou | motivo: chat não encontrado${chatId}`)
+    console.log(`[Leitura] ${sourceName} | status: falhou | motivo: chat não encontrado${chatId}${candidates}`)
     return
   }
 
   if (readResult.status === 'empty_window') {
-    console.log(`[Leitura] ${sourceName} | status: sem mensagens | motivo: chat encontrado, mas nenhuma mensagem dentro da janela de varredura${matched}${chatId}`)
+    console.log(`[Leitura] ${sourceName} | status: sem mensagens | motivo: chat encontrado, mas nenhuma mensagem dentro da janela de varredura${matched}${chatId}${score}`)
     return
   }
 
-  console.log(`[Leitura] ${sourceName} | status: ${readResult.status || 'desconhecido'} | mensagens: ${readResult.messages?.length || 0}${matched}${chatId}`)
+  console.log(`[Leitura] ${sourceName} | status: ${readResult.status || 'desconhecido'} | mensagens: ${readResult.messages?.length || 0}${matched}${chatId}${score}${candidates}`)
 }
 
 function logMessagePreview(messages, sourceName) {

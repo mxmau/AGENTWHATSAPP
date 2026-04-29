@@ -159,20 +159,32 @@ export async function fetchRecentMessages(chatName, hoursBack = 12) {
   await waitForWarmup()
 
   const cutoff = Math.floor((Date.now() - hoursBack * 3600 * 1000) / 1000)
-  const chat = findChatByName(chatName)
+  const match = findChatByName(chatName)
+  const chat = match?.chat
 
   if (!chat) {
     console.warn(`[WhatsApp] Chat não encontrado: "${chatName}"`)
-    return { messages: [], status: 'not_found', source: chatName, matchedChat: null, chatId: null }
+    console.warn(`[WhatsApp] Candidatos parecidos para "${chatName}": ${formatChatCandidates(match?.candidates || [])}`)
+    return {
+      messages: [],
+      status: 'not_found',
+      source: chatName,
+      matchedChat: null,
+      chatId: null,
+      candidates: match?.candidates || [],
+    }
   }
 
   const messages = extractMessagesFromStore(chat.id, cutoff, getChatDisplayName(chat))
+  console.log(`[WhatsApp] Chat encontrado para "${chatName}": "${getChatDisplayName(chat)}" | score ${match.score} | id ${chat.id}`)
   return {
     messages,
     status: messages.length ? 'ok' : 'empty_window',
     source: chatName,
     matchedChat: getChatDisplayName(chat),
     chatId: chat.id,
+    score: match.score,
+    candidates: match.candidates,
   }
 }
 
@@ -259,9 +271,94 @@ function getSelfChatCandidates() {
 }
 
 function findChatByName(chatName) {
-  const needle = chatName.toLowerCase()
-  return [...chats.values()].find(chat => getChatDisplayName(chat).toLowerCase().includes(needle))
-    || [...contacts.values()].find(contact => getContactDisplayName(contact).toLowerCase().includes(needle))
+  const needle = normalizeSearchText(chatName)
+  const needleTokens = tokenizeSearchText(chatName)
+  const candidates = buildChatSearchCandidates()
+    .map(candidate => ({ ...candidate, score: scoreChatCandidate(needle, needleTokens, candidate) }))
+    .filter(candidate => candidate.score > 0)
+    .sort((a, b) => b.score - a.score)
+
+  const best = candidates[0]
+  const minimumScore = needleTokens.length > 1 ? 45 : 30
+  return {
+    chat: best?.score >= minimumScore ? best.chat : null,
+    score: best?.score || 0,
+    candidates: candidates.slice(0, 8).map(candidate => ({
+      name: candidate.displayName,
+      id: candidate.id,
+      score: candidate.score,
+    })),
+  }
+}
+
+function buildChatSearchCandidates() {
+  const byId = new Map()
+
+  for (const chat of chats.values()) {
+    const displayName = getChatDisplayName(chat)
+    byId.set(chat.id, { id: chat.id, chat, displayName, searchable: buildSearchableText(displayName, chat.id) })
+  }
+
+  for (const contact of contacts.values()) {
+    const existing = byId.get(contact.id) || { id: contact.id, chat: { id: contact.id }, displayName: '', searchable: '' }
+    const displayName = existing.displayName || getContactDisplayName(contact)
+    byId.set(contact.id, {
+      ...existing,
+      displayName,
+      searchable: buildSearchableText(displayName, contact.id),
+    })
+  }
+
+  for (const chatId of messagesByChat.keys()) {
+    if (!byId.has(chatId)) {
+      byId.set(chatId, { id: chatId, chat: { id: chatId }, displayName: chatId, searchable: buildSearchableText(chatId, chatId) })
+    }
+  }
+
+  return [...byId.values()].filter(candidate => candidate.displayName)
+}
+
+function scoreChatCandidate(needle, needleTokens, candidate) {
+  const haystack = candidate.searchable
+  const haystackTokens = tokenizeSearchText(candidate.displayName)
+  let score = 0
+
+  if (!needle || !haystack) return 0
+  if (haystack === needle) score += 120
+  if (haystack.includes(needle)) score += 90
+  if (needle.includes(haystack)) score += 70
+
+  const matchedTokens = needleTokens.filter(token => haystackTokens.includes(token) || haystack.includes(token))
+  score += matchedTokens.length * 22
+
+  if (needleTokens.length && matchedTokens.length === needleTokens.length) score += 35
+  if (candidate.id.includes('@g.us')) score += 5
+
+  return score
+}
+
+function formatChatCandidates(candidates) {
+  if (!candidates.length) return 'nenhum candidato encontrado no cache de chats'
+  return candidates.map(candidate => `"${candidate.name}" (${candidate.score})`).join('; ')
+}
+
+function buildSearchableText(...values) {
+  return values.map(normalizeSearchText).filter(Boolean).join(' ')
+}
+
+function tokenizeSearchText(value) {
+  return normalizeSearchText(value).split(' ').filter(token => token.length >= 2)
+}
+
+function normalizeSearchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' e ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function getChatDisplayName(chat) {
