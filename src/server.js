@@ -3,7 +3,7 @@ import express from 'express'
 import { createServer } from 'http'
 import { Server as SocketIO } from 'socket.io'
 import cron from 'node-cron'
-import { initWhatsApp, getQR, getStatus, clientEvents, listKnownChats, diagnoseChatCandidates } from './whatsappClient.js'
+import { initWhatsApp, getQR, getStatus, clientEvents, listKnownChats, diagnoseChatCandidates, refreshGroupCache } from './whatsappClient.js'
 import { runPipeline } from './pipeline.js'
 import { listExistingAgents } from './agentManager.js'
 import { loadHistoryAsync } from './runHistory.js'
@@ -230,16 +230,21 @@ app.get('/logs', async (req, res) => {
   res.json({ date, logs: await listLogsByRecifeDate(date, { limit }) })
 })
 
-app.get('/debug/chats', (req, res) => {
-  const query = String(req.query.query || '')
-  const limit = Math.min(parseInt(req.query.limit || '30'), 100)
-  const includeMessages = ['1', 'true', 'yes', 'sim'].includes(String(req.query.messages || '').toLowerCase())
-  const hoursBack = Math.min(parseInt(req.query.hours || process.env.HOURS_LOOKBACK || '12'), 72)
-  res.json({
-    query,
-    hoursBack,
-    chats: listKnownChats({ query, limit, includeMessages, hoursBack }),
-  })
+app.get('/debug/chats', async (req, res) => {
+  try {
+    const query = String(req.query.query || '')
+    const limit = Math.min(parseInt(req.query.limit || '30'), 100)
+    const includeMessages = ['1', 'true', 'yes', 'sim'].includes(String(req.query.messages || '').toLowerCase())
+    const hoursBack = Math.min(parseInt(req.query.hours || process.env.HOURS_LOOKBACK || '12'), 72)
+    await refreshGroupCache()
+    res.json({
+      query,
+      hoursBack,
+      chats: listKnownChats({ query, limit, includeMessages, hoursBack }),
+    })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message })
+  }
 })
 
 app.get('/debug/source', async (req, res) => {

@@ -88,7 +88,7 @@ export async function initWhatsApp() {
   return sock
 }
 
-async function refreshGroupCache() {
+export async function refreshGroupCache() {
   if (!sock?.groupFetchAllParticipating) return
 
   try {
