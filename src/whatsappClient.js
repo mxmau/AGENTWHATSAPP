@@ -63,6 +63,7 @@ export async function initWhatsApp() {
       readyAt = Date.now()
       qrDataUrl = null
       clientEvents.emit('ready')
+      await refreshGroupCache()
       await saveDirectory(AUTH_DIR, 'baileys-auth')
       console.log('[WhatsApp] Conectado e pronto')
     }
@@ -85,6 +86,23 @@ export async function initWhatsApp() {
   })
 
   return sock
+}
+
+async function refreshGroupCache() {
+  if (!sock?.groupFetchAllParticipating) return
+
+  try {
+    const groups = await sock.groupFetchAllParticipating()
+    const groupChats = Object.values(groups || {}).map(group => ({
+      id: group.id,
+      name: group.subject,
+      subject: group.subject,
+    }))
+    upsertChats(groupChats)
+    console.log(`[WhatsApp] Cache de grupos atualizado: ${groupChats.length} grupos`)
+  } catch (err) {
+    console.warn('[WhatsApp] Não foi possível atualizar cache de grupos:', err.message)
+  }
 }
 
 function bindStoreEvents(socket) {
