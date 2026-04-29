@@ -178,6 +178,7 @@ export async function fetchRecentMessages(chatName, hoursBack = 12) {
   const messagesByCandidate = matchedCandidates.map(candidate => {
     const candidateMessages = extractMessagesFromStore(candidate.id, cutoff, candidate.displayName)
     console.log(`[WhatsApp] Candidato lido para "${chatName}": "${candidate.displayName}" | score ${candidate.score} | mensagens ${candidateMessages.length} | id ${candidate.id}`)
+    logCandidateMessages(chatName, candidate.displayName, candidateMessages)
     return { ...candidate, messages: candidateMessages }
   })
 
@@ -206,6 +207,24 @@ export async function fetchRecentMessages(chatName, hoursBack = 12) {
       score: candidate.score,
       messages: candidate.messages.length,
     })),
+  }
+}
+
+function logCandidateMessages(sourceName, candidateName, messages) {
+  if (!messages.length) {
+    console.log(`[Mensagem/Candidato] ${sourceName} | ${candidateName} | nenhuma mensagem dentro da janela`)
+    return
+  }
+
+  const limit = parseInt(process.env.LOG_CANDIDATE_MESSAGE_LIMIT || '20')
+  for (const message of messages.slice(0, limit)) {
+    const body = String(message.body || '').replace(/\s+/g, ' ').trim()
+    const preview = body.length > 240 ? `${body.slice(0, 240)}...` : body
+    console.log(`[Mensagem/Candidato] ${sourceName} | ${candidateName} | ${message.timestamp} | ${message.from}: ${preview}`)
+  }
+
+  if (messages.length > limit) {
+    console.log(`[Mensagem/Candidato] ${sourceName} | ${candidateName} | mais ${messages.length - limit} mensagens ocultas no preview`)
   }
 }
 

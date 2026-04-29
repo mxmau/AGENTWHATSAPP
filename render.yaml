@@ -26,5 +26,7 @@ services:
         value: "12"
       - key: LOG_MESSAGE_PREVIEW_LIMIT
         value: "10"
+      - key: LOG_CANDIDATE_MESSAGE_LIMIT
+        value: "20"
       - key: PORT
         value: "3001"
