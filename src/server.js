@@ -3,7 +3,7 @@ import express from 'express'
 import { createServer } from 'http'
 import { Server as SocketIO } from 'socket.io'
 import cron from 'node-cron'
-import { initWhatsApp, getQR, getStatus, clientEvents } from './whatsappClient.js'
+import { initWhatsApp, getQR, getStatus, clientEvents, listKnownChats, diagnoseChatCandidates } from './whatsappClient.js'
 import { runPipeline } from './pipeline.js'
 import { listExistingAgents } from './agentManager.js'
 import { loadHistoryAsync } from './runHistory.js'
@@ -228,6 +228,55 @@ app.get('/logs', async (req, res) => {
   const date = req.query.date || getTodayRecifeDate()
   const limit = Math.min(parseInt(req.query.limit || '1000'), 5000)
   res.json({ date, logs: await listLogsByRecifeDate(date, { limit }) })
+})
+
+app.get('/debug/chats', (req, res) => {
+  const query = String(req.query.query || '')
+  const limit = Math.min(parseInt(req.query.limit || '30'), 100)
+  const includeMessages = ['1', 'true', 'yes', 'sim'].includes(String(req.query.messages || '').toLowerCase())
+  const hoursBack = Math.min(parseInt(req.query.hours || process.env.HOURS_LOOKBACK || '12'), 72)
+  res.json({
+    query,
+    hoursBack,
+    chats: listKnownChats({ query, limit, includeMessages, hoursBack }),
+  })
+})
+
+app.get('/debug/source', async (req, res) => {
+  try {
+    const query = String(req.query.query || '')
+    const hoursBack = Math.min(parseInt(req.query.hours || process.env.HOURS_LOOKBACK || '12'), 72)
+    if (!query.trim()) {
+      res.status(400).json({ ok: false, error: 'informe ?query=nome-do-chat' })
+      return
+    }
+
+    const diagnosis = await diagnoseChatCandidates(query, hoursBack)
+    res.json({ ok: true, hoursBack, ...diagnosis })
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message })
+  }
+})
+
+app.get('/debug/sources', (req, res) => {
+  const sourceKeys = [
+    ['GROUP_ESCOLA_1', 'GROUP_ESCOLA_1_ID', 'Ecilda Ramos 2026'],
+    ['GROUP_ESCOLA_2', 'GROUP_ESCOLA_2_ID', 'Professores - Tiradentes'],
+    ['GROUP_IGREJA', 'GROUP_IGREJA_ID', 'Ministro e Obreiros IIGD BV'],
+    ['CONTACT_ESPOSA', 'CONTACT_ESPOSA_ID', 'Rafaelly'],
+    ['CONTACT_PASTOR', 'CONTACT_PASTOR_ID', 'PR Josehilton'],
+    ['CONTACT_EU', 'CONTACT_EU_ID', '__self__'],
+  ]
+
+  res.json({
+    sources: sourceKeys.map(([nameKey, idKey, defaultName]) => ({
+      nameKey,
+      name: process.env[nameKey] || defaultName,
+      idKey,
+      idConfigured: Boolean(process.env[idKey]),
+      id: process.env[idKey] || null,
+    })),
+  })
 })
 
 // ── Socket.IO ─────────────────────────────────────────────────────────────────

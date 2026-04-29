@@ -1,5 +1,5 @@
 import 'dotenv/config'
-import { fetchRecentMessages, fetchSelfMessages } from './whatsappClient.js'
+import { fetchRecentMessages, fetchRecentMessagesById, fetchSelfMessages } from './whatsappClient.js'
 import { extractTasks } from './taskExtractor.js'
 import { findAgentForTask, createAgentForTask } from './agentManager.js'
 import { addRunToHistory } from './runHistory.js'
@@ -9,12 +9,12 @@ const HOURS_LOOKBACK = parseInt(process.env.HOURS_LOOKBACK || '12')
 // Fontes configuradas: 2 grupos de escola, 1 de igreja, esposa, pastor e o próprio usuário
 function getSources() {
   return [
-    { envKey: 'GROUP_ESCOLA_1',   label: 'Grupo Escola (Ecilda Ramos)',       default: 'Ecilda Ramos 2026' },
-    { envKey: 'GROUP_ESCOLA_2',   label: 'Grupo Escola (Professores)',         default: 'Professores - Tiradentes' },
-    { envKey: 'GROUP_IGREJA',     label: 'Grupo Igreja',                       default: 'Ministro e Obreiros IIGD BV' },
-    { envKey: 'CONTACT_ESPOSA',   label: 'Esposa (Rafaelly)',                  default: 'Rafaelly' },
-    { envKey: 'CONTACT_PASTOR',   label: 'PR Josehilton',                      default: 'PR Josehilton' },
-    { envKey: 'CONTACT_EU',       label: 'Meus recados',                       default: '__self__' },
+    { envKey: 'GROUP_ESCOLA_1',   idEnvKey: 'GROUP_ESCOLA_1_ID',   label: 'Grupo Escola (Ecilda Ramos)',       default: 'Ecilda Ramos 2026' },
+    { envKey: 'GROUP_ESCOLA_2',   idEnvKey: 'GROUP_ESCOLA_2_ID',   label: 'Grupo Escola (Professores)',         default: 'Professores - Tiradentes' },
+    { envKey: 'GROUP_IGREJA',     idEnvKey: 'GROUP_IGREJA_ID',     label: 'Grupo Igreja',                       default: 'Ministro e Obreiros IIGD BV' },
+    { envKey: 'CONTACT_ESPOSA',   idEnvKey: 'CONTACT_ESPOSA_ID',   label: 'Esposa (Rafaelly)',                  default: 'Rafaelly' },
+    { envKey: 'CONTACT_PASTOR',   idEnvKey: 'CONTACT_PASTOR_ID',   label: 'PR Josehilton',                      default: 'PR Josehilton' },
+    { envKey: 'CONTACT_EU',       idEnvKey: 'CONTACT_EU_ID',       label: 'Meus recados',                       default: '__self__' },
   ]
 }
 
@@ -34,34 +34,38 @@ export async function runPipeline() {
 
   for (const source of getSources()) {
     const chatName = process.env[source.envKey] || source.default
+    const chatId = process.env[source.idEnvKey] || ''
     const isSelf = chatName === '__self__'
-    console.log(`[Pipeline] Lendo "${isSelf ? 'Meus recados' : chatName}"...`)
+    const displaySourceName = isSelf ? 'Meus recados' : chatName
+    console.log(`[Pipeline] Lendo "${displaySourceName}"${chatId ? ` pelo id ${chatId}` : ' por nome seguro'}...`)
 
     let messages = []
     try {
       const readResult = isSelf
         ? await fetchSelfMessages(HOURS_LOOKBACK)
-        : await fetchRecentMessages(chatName, HOURS_LOOKBACK)
+        : chatId
+          ? await fetchRecentMessagesById(chatId, chatName, HOURS_LOOKBACK)
+          : await fetchRecentMessages(chatName, HOURS_LOOKBACK)
       messages = Array.isArray(readResult) ? readResult : readResult.messages
-      logReadResult(readResult, isSelf ? 'Meus recados' : chatName)
-      console.log(`[Pipeline] ${messages.length} mensagens encontradas em "${isSelf ? 'Meus recados' : chatName}"`)
-      logMessagePreview(messages, isSelf ? 'Meus recados' : chatName)
+      logReadResult(readResult, displaySourceName)
+      console.log(`[Pipeline] ${messages.length} mensagens encontradas em "${displaySourceName}"`)
+      logMessagePreview(messages, displaySourceName)
     } catch (err) {
-      console.warn(`[Pipeline] Erro ao ler "${chatName}":`, err.message)
-      summary.sources.push({ name: chatName, error: err.message, tasks: [] })
+      console.warn(`[Pipeline] Erro ao ler "${displaySourceName}":`, err.message)
+      summary.sources.push({ name: displaySourceName, error: err.message, tasks: [] })
       continue
     }
 
     if (!messages.length) {
-      summary.sources.push({ name: isSelf ? 'Meus recados' : chatName, tasks: [] })
+      summary.sources.push({ name: displaySourceName, tasks: [] })
       continue
     }
 
     const tasks = await extractTasks(messages, source.label)
-    console.log(`[Pipeline] ${tasks.length} tarefas extraídas de "${chatName}"`)
-    logTaskPreview(tasks, isSelf ? 'Meus recados' : chatName)
+    console.log(`[Pipeline] ${tasks.length} tarefas extraídas de "${displaySourceName}"`)
+    logTaskPreview(tasks, displaySourceName)
 
-    const sourceSummary = { name: isSelf ? 'Meus recados' : chatName, tasks: [] }
+    const sourceSummary = { name: displaySourceName, tasks: [] }
 
     for (const task of tasks) {
       summary.totalTasks++
@@ -114,8 +118,13 @@ function logReadResult(readResult, sourceName) {
     return
   }
 
-  if (readResult.status === 'not_found') {
+  if (readResult.status === 'not_found' || readResult.status === 'id_not_found') {
     console.log(`[Leitura] ${sourceName} | status: falhou | motivo: chat não encontrado${chatId}${candidates}`)
+    return
+  }
+
+  if (readResult.status === 'ambiguous') {
+    console.log(`[Leitura] ${sourceName} | status: ambíguo | motivo: mais de um candidato possível, nenhuma mensagem enviada para extração${candidates}${scanned}`)
     return
   }
 

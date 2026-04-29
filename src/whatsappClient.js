@@ -149,7 +149,47 @@ async function waitForWarmup() {
 }
 
 /**
- * Busca mensagens recentes de um chat pelo nome (busca parcial)
+ * Busca mensagens recentes por id exato do chat. Esta é a forma oficial e segura.
+ */
+export async function fetchRecentMessagesById(chatId, sourceName, hoursBack = 12) {
+  if (!sock || clientStatus !== 'ready') {
+    throw new Error('WhatsApp não está conectado')
+  }
+
+  await waitForWarmup()
+
+  const normalizedChatId = String(chatId || '').trim()
+  const cutoff = Math.floor((Date.now() - hoursBack * 3600 * 1000) / 1000)
+  const candidate = getChatCandidateById(normalizedChatId)
+
+  if (!candidate) {
+    console.warn(`[WhatsApp] Chat id não encontrado para "${sourceName}": ${normalizedChatId}`)
+    return {
+      messages: [],
+      status: 'id_not_found',
+      source: sourceName,
+      matchedChat: null,
+      chatId: normalizedChatId,
+      candidates: [],
+    }
+  }
+
+  const messages = extractMessagesFromStore(candidate.id, cutoff, candidate.displayName)
+  console.log(`[WhatsApp] Chat lido por id para "${sourceName}": "${candidate.displayName}" | mensagens ${messages.length} | id ${candidate.id}`)
+  logCandidateMessages(sourceName, candidate.displayName, messages)
+
+  return {
+    messages,
+    status: messages.length ? 'ok' : 'empty_window',
+    source: sourceName,
+    matchedChat: candidate.displayName,
+    chatId: candidate.id,
+    matchMode: 'id',
+  }
+}
+
+/**
+ * Busca mensagens recentes pelo nome somente quando o resultado é claramente único.
  */
 export async function fetchRecentMessages(chatName, hoursBack = 12) {
   if (!sock || clientStatus !== 'ready') {
@@ -160,54 +200,86 @@ export async function fetchRecentMessages(chatName, hoursBack = 12) {
 
   const cutoff = Math.floor((Date.now() - hoursBack * 3600 * 1000) / 1000)
   const match = findChatByName(chatName)
-  const matchedCandidates = match?.matchedCandidates || []
+  const selected = match?.selectedCandidate
 
-  if (!matchedCandidates.length) {
-    console.warn(`[WhatsApp] Chat não encontrado: "${chatName}"`)
-    console.warn(`[WhatsApp] Candidatos parecidos para "${chatName}": ${formatChatCandidates(match?.candidates || [])}`)
+  if (!selected) {
+    const status = match?.ambiguous ? 'ambiguous' : 'not_found'
+    const reason = match?.ambiguous ? 'candidatos ambíguos' : 'chat não encontrado'
+    console.warn(`[WhatsApp] ${reason}: "${chatName}"`)
+    console.warn(`[WhatsApp] Candidatos para "${chatName}": ${formatChatCandidates(match?.candidates || [])}`)
+
+    const diagnosticCandidates = readDiagnosticCandidateMessages(chatName, match?.candidates || [], cutoff)
     return {
       messages: [],
-      status: 'not_found',
+      status,
       source: chatName,
       matchedChat: null,
       chatId: null,
       candidates: match?.candidates || [],
+      scannedCandidates: diagnosticCandidates,
+      reason,
     }
   }
 
-  const messagesByCandidate = matchedCandidates.map(candidate => {
-    const candidateMessages = extractMessagesFromStore(candidate.id, cutoff, candidate.displayName)
-    console.log(`[WhatsApp] Candidato lido para "${chatName}": "${candidate.displayName}" | score ${candidate.score} | mensagens ${candidateMessages.length} | id ${candidate.id}`)
-    logCandidateMessages(chatName, candidate.displayName, candidateMessages)
-    return { ...candidate, messages: candidateMessages }
-  })
-
-  const uniqueMessages = new Map()
-  for (const candidate of messagesByCandidate) {
-    for (const message of candidate.messages) {
-      uniqueMessages.set(`${message.timestamp}:${message.from}:${message.body}`, message)
-    }
-  }
-
-  const messages = [...uniqueMessages.values()].sort((a, b) => a.timestampMs - b.timestampMs)
-  const matchedChatNames = matchedCandidates.map(candidate => candidate.displayName).join(', ')
-  const matchedChatIds = matchedCandidates.map(candidate => candidate.id).join(', ')
+  const messages = extractMessagesFromStore(selected.id, cutoff, selected.displayName)
+  console.log(`[WhatsApp] Chat lido para "${chatName}": "${selected.displayName}" | score ${selected.score} | mensagens ${messages.length} | id ${selected.id}`)
+  logCandidateMessages(chatName, selected.displayName, messages)
 
   return {
     messages,
     status: messages.length ? 'ok' : 'empty_window',
     source: chatName,
-    matchedChat: matchedChatNames,
-    chatId: matchedChatIds,
-    score: match.score,
+    matchedChat: selected.displayName,
+    chatId: selected.id,
+    score: selected.score,
+    matchMode: 'safe-name',
     candidates: match.candidates,
-    scannedCandidates: messagesByCandidate.map(candidate => ({
-      name: candidate.displayName,
-      id: candidate.id,
-      score: candidate.score,
-      messages: candidate.messages.length,
-    })),
+    scannedCandidates: [{
+      name: selected.displayName,
+      id: selected.id,
+      score: selected.score,
+      messages: messages.length,
+    }],
   }
+}
+
+export async function diagnoseChatCandidates(chatName, hoursBack = 12) {
+  if (!sock || clientStatus !== 'ready') {
+    throw new Error('WhatsApp não está conectado')
+  }
+
+  await waitForWarmup()
+
+  const cutoff = Math.floor((Date.now() - hoursBack * 3600 * 1000) / 1000)
+  const match = findChatByName(chatName)
+  return {
+    query: chatName,
+    candidates: readDiagnosticCandidateMessages(chatName, match?.candidates || [], cutoff),
+  }
+}
+
+export function listKnownChats({ query = '', limit = 30, includeMessages = false, hoursBack = 12 } = {}) {
+  const needle = normalizeSearchText(query)
+  const cutoff = Math.floor((Date.now() - hoursBack * 3600 * 1000) / 1000)
+  const allCandidates = buildChatSearchCandidates()
+    .map(candidate => ({
+      id: candidate.id,
+      name: candidate.displayName,
+      isGroup: candidate.id.includes('@g.us'),
+      messageCount: (messagesByChat.get(candidate.id) || []).length,
+      lastMessageAt: getLastMessageAt(candidate.id),
+      score: needle ? scoreChatCandidate(needle, tokenizeSearchText(query), candidate) : 0,
+    }))
+    .filter(candidate => !needle || candidate.score > 0)
+    .sort((a, b) => (b.score - a.score) || (new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0)))
+    .slice(0, Number(limit) || 30)
+
+  if (!includeMessages) return allCandidates
+
+  return allCandidates.map(candidate => ({
+    ...candidate,
+    recentMessages: extractMessagesFromStore(candidate.id, cutoff, candidate.name).slice(-10),
+  }))
 }
 
 function logCandidateMessages(sourceName, candidateName, messages) {
@@ -310,6 +382,48 @@ function getSelfChatCandidates() {
   return [...candidates.values()]
 }
 
+
+function getChatCandidateById(chatId) {
+  if (!chatId) return null
+  const chat = chats.get(chatId)
+  const contact = contacts.get(chatId)
+  const hasMessages = messagesByChat.has(chatId)
+
+  if (!chat && !contact && !hasMessages) return null
+
+  const displayName = getChatDisplayName(chat || {}) || getContactDisplayName(contact || {}) || chatId
+  return {
+    id: chatId,
+    chat: chat || { id: chatId },
+    displayName,
+    searchable: buildSearchableText(displayName, chatId),
+  }
+}
+
+function readDiagnosticCandidateMessages(sourceName, candidates, cutoff) {
+  const limit = parseInt(process.env.DIAGNOSTIC_CANDIDATE_LIMIT || '8')
+
+  return candidates.slice(0, limit).map(candidate => {
+    const messages = extractMessagesFromStore(candidate.id, cutoff, candidate.name)
+    console.log(`[WhatsApp/Diagnóstico] ${sourceName} | candidato "${candidate.name}" | score ${candidate.score} | mensagens ${messages.length} | id ${candidate.id}`)
+    logCandidateMessages(sourceName, candidate.name, messages)
+    return {
+      name: candidate.name,
+      id: candidate.id,
+      score: candidate.score,
+      messages: messages.length,
+      recentMessages: messages.slice(-10),
+    }
+  })
+}
+
+function getLastMessageAt(chatId) {
+  const list = messagesByChat.get(chatId) || []
+  const last = list[list.length - 1]
+  if (!last?.messageTimestamp) return null
+  return new Date(Number(last.messageTimestamp) * 1000).toISOString()
+}
+
 function findChatByName(chatName) {
   const needle = normalizeSearchText(chatName)
   const needleTokens = tokenizeSearchText(chatName)
@@ -319,19 +433,22 @@ function findChatByName(chatName) {
     .sort((a, b) => b.score - a.score)
 
   const best = candidates[0]
-  const minimumScore = 25
-  const matchedCandidates = candidates
-    .filter(candidate => candidate.score >= minimumScore)
-    .slice(0, 5)
+  const second = candidates[1]
+  const minimumScore = 90
+  const isExact = best && normalizeSearchText(best.displayName) === needle
+  const isClearWinner = best?.score >= minimumScore && (!second || best.score - second.score >= 40)
+  const selectedCandidate = (isExact || isClearWinner) ? best : null
 
   return {
-    chat: best?.score >= minimumScore ? best.chat : null,
+    chat: selectedCandidate?.chat || null,
     score: best?.score || 0,
-    matchedCandidates,
+    selectedCandidate,
+    ambiguous: Boolean(best && !selectedCandidate),
     candidates: candidates.slice(0, 8).map(candidate => ({
       name: candidate.displayName,
       id: candidate.id,
       score: candidate.score,
+      isGroup: candidate.id.includes('@g.us'),
     })),
   }
 }
