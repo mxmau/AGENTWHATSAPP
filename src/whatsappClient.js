@@ -163,10 +163,17 @@ export async function fetchRecentMessages(chatName, hoursBack = 12) {
 
   if (!chat) {
     console.warn(`[WhatsApp] Chat não encontrado: "${chatName}"`)
-    return []
+    return { messages: [], status: 'not_found', source: chatName, matchedChat: null, chatId: null }
   }
 
-  return extractMessagesFromStore(chat.id, cutoff, getChatDisplayName(chat))
+  const messages = extractMessagesFromStore(chat.id, cutoff, getChatDisplayName(chat))
+  return {
+    messages,
+    status: messages.length ? 'ok' : 'empty_window',
+    source: chatName,
+    matchedChat: getChatDisplayName(chat),
+    chatId: chat.id,
+  }
 }
 
 /**
@@ -179,11 +186,76 @@ export async function fetchSelfMessages(hoursBack = 12) {
 
   await waitForWarmup()
 
-  const me = sock.user?.id
-  if (!me) return []
-
   const cutoff = Math.floor((Date.now() - hoursBack * 3600 * 1000) / 1000)
-  return extractMessagesFromStore(me, cutoff, 'Meus recados')
+  const selfCandidates = getSelfChatCandidates()
+  const messages = selfCandidates.flatMap(candidate => extractMessagesFromStore(candidate.id, cutoff, candidate.name))
+
+  const uniqueMessages = new Map()
+  for (const message of messages) {
+    uniqueMessages.set(`${message.timestamp}:${message.from}:${message.body}`, message)
+  }
+
+  if (!uniqueMessages.size) {
+    console.warn(`[WhatsApp] Nenhuma mensagem encontrada em Meus recados. Candidatos testados: ${selfCandidates.map(candidate => candidate.id).join(', ') || 'nenhum'}`)
+  }
+
+  const dedupedMessages = [...uniqueMessages.values()].sort((a, b) => a.timestampMs - b.timestampMs)
+  return {
+    messages: dedupedMessages,
+    status: dedupedMessages.length ? 'ok' : 'empty_window',
+    source: 'Meus recados',
+    matchedChat: selfCandidates.map(candidate => candidate.name).filter(Boolean).join(', ') || 'Meus recados',
+    chatId: selfCandidates.map(candidate => candidate.id).join(', '),
+  }
+}
+
+function getSelfChatCandidates() {
+  const candidates = new Map()
+  const userId = sock.user?.id
+  const lid = sock.user?.lid
+  const jid = sock.user?.jid
+  const decodedUser = userId?.split(':')[0]?.split('@')[0]
+
+  function addCandidate(id, name = 'Meus recados') {
+    if (id) candidates.set(id, { id, name })
+  }
+
+  for (const id of [userId, lid, jid, decodedUser && `${decodedUser}@s.whatsapp.net`]) {
+    addCandidate(id)
+  }
+
+  for (const chat of chats.values()) {
+    const displayName = getChatDisplayName(chat).toLowerCase()
+    const isSelfByName = ['recados', 'meus recados', 'message yourself', 'you', 'você'].some(label => displayName.includes(label))
+    const isSelfById = [userId, lid, jid].filter(Boolean).includes(chat.id)
+    const hasOwnNumber = decodedUser && chat.id.includes(decodedUser)
+
+    if (isSelfByName || isSelfById || hasOwnNumber) {
+      addCandidate(chat.id, getChatDisplayName(chat) || 'Meus recados')
+    }
+  }
+
+  for (const contact of contacts.values()) {
+    const displayName = getContactDisplayName(contact).toLowerCase()
+    const isSelfByName = ['recados', 'meus recados', 'message yourself', 'you', 'você'].some(label => displayName.includes(label))
+    const isSelfById = [userId, lid, jid].filter(Boolean).includes(contact.id)
+    const hasOwnNumber = decodedUser && contact.id.includes(decodedUser)
+
+    if (isSelfByName || isSelfById || hasOwnNumber) {
+      addCandidate(contact.id, getContactDisplayName(contact) || 'Meus recados')
+    }
+  }
+
+  for (const chatId of messagesByChat.keys()) {
+    const isSelfById = [userId, lid, jid].filter(Boolean).includes(chatId)
+    const hasOwnNumber = decodedUser && chatId.includes(decodedUser)
+
+    if (isSelfById || hasOwnNumber) {
+      addCandidate(chatId)
+    }
+  }
+
+  return [...candidates.values()]
 }
 
 function findChatByName(chatName) {
@@ -215,6 +287,7 @@ function extractMessagesFromStore(chatId, cutoffTimestamp, chatName) {
     .map(message => ({
       from: getSenderName(message),
       body: getMessageBody(message),
+      timestampMs: Number(message.messageTimestamp) * 1000,
       timestamp: new Date(Number(message.messageTimestamp) * 1000).toLocaleString('pt-BR'),
       chatName,
     }))

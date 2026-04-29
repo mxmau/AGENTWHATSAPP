@@ -39,9 +39,11 @@ export async function runPipeline() {
 
     let messages = []
     try {
-      messages = isSelf
+      const readResult = isSelf
         ? await fetchSelfMessages(HOURS_LOOKBACK)
         : await fetchRecentMessages(chatName, HOURS_LOOKBACK)
+      messages = Array.isArray(readResult) ? readResult : readResult.messages
+      logReadResult(readResult, isSelf ? 'Meus recados' : chatName)
       console.log(`[Pipeline] ${messages.length} mensagens encontradas em "${isSelf ? 'Meus recados' : chatName}"`)
       logMessagePreview(messages, isSelf ? 'Meus recados' : chatName)
     } catch (err) {
@@ -89,6 +91,33 @@ export async function runPipeline() {
 
   console.log(`[Pipeline] Concluído. ${summary.totalTasks} tarefas | ${summary.newAgents.length} agentes criados`)
   return summary
+}
+
+function logReadResult(readResult, sourceName) {
+  if (Array.isArray(readResult)) {
+    console.log(`[Leitura] ${sourceName} | status: ok-legado | mensagens: ${readResult.length}`)
+    return
+  }
+
+  const matched = readResult.matchedChat ? ` | chat encontrado: ${readResult.matchedChat}` : ''
+  const chatId = readResult.chatId ? ` | id: ${readResult.chatId}` : ''
+
+  if (readResult.status === 'ok') {
+    console.log(`[Leitura] ${sourceName} | status: ok | mensagens lidas: ${readResult.messages.length}${matched}`)
+    return
+  }
+
+  if (readResult.status === 'not_found') {
+    console.log(`[Leitura] ${sourceName} | status: falhou | motivo: chat não encontrado${chatId}`)
+    return
+  }
+
+  if (readResult.status === 'empty_window') {
+    console.log(`[Leitura] ${sourceName} | status: sem mensagens | motivo: chat encontrado, mas nenhuma mensagem dentro da janela de varredura${matched}${chatId}`)
+    return
+  }
+
+  console.log(`[Leitura] ${sourceName} | status: ${readResult.status || 'desconhecido'} | mensagens: ${readResult.messages?.length || 0}${matched}${chatId}`)
 }
 
 function logMessagePreview(messages, sourceName) {
