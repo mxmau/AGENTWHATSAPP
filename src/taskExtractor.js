@@ -36,6 +36,7 @@ CRITÉRIOS PARA EXTRAIR UMA TAREFA:
 8. Quando alguém declarar uma dor, dificuldade, desorganização, incômodo, gargalo ou desejo de melhorar algo, transforme isso em uma tarefa implícita e sugira um agente de apoio.
 9. Frases como "está uma bagunça", "não estou dando conta", "seria bom", "preciso melhorar", "queria um jeito", "tá difícil", "não consigo organizar", "estou perdido" indicam necessidade e devem virar tarefa.
 10. Não extraia saudações, agradecimentos, conversas soltas, memes, confirmações sem ação ou mensagens puramente informativas sem necessidade de acompanhamento.
+11. Se alguém disser que falta um material, post, aula, documento, resposta ou entrega, isso é tarefa mesmo sem usar a palavra "faça".
 
 EXEMPLOS DO QUE DEVE VIRAR TAREFA:
 - "criar um agente de design" -> tarefa tipo "criar_agente", prioridade média, agente_sugerido "Agente de Design".
@@ -50,6 +51,8 @@ EXEMPLOS DO QUE DEVE VIRAR TAREFA:
 - "meu horário tá uma bagunça, seria bom que eu pudesse organizar ele" -> tarefa tipo "organização", agente_sugerido "Agente Organizador de Horários".
 - "não estou dando conta das tarefas da escola" -> tarefa tipo "organização", agente_sugerido "Agente Gestor de Tarefas Escolares".
 - "queria um jeito de controlar melhor os compromissos da igreja" -> tarefa tipo "organização", agente_sugerido "Agente de Compromissos da Igreja".
+- "Falta o post da quarta feira igreja de joelhos família de pé" -> tarefa tipo "design", agente_sugerido "Agente de Posts da Igreja".
+- "Falta da sexta feira curso fé" -> tarefa tipo "design", agente_sugerido "Agente de Posts da Igreja".
 
 EXEMPLOS DO QUE NÃO DEVE VIRAR TAREFA:
 - "bom dia".
@@ -57,6 +60,7 @@ EXEMPLOS DO QUE NÃO DEVE VIRAR TAREFA:
 - "kkkk".
 - "obrigado".
 - notícia sem pedido de ação.
+- "Tem outros detalhes", "Mas depois lhe conto", "Peguei o aeroporto agora", "Estamos indo pra macaxeira", "Tá certo", "Te amo".
 
 Analise as mensagens abaixo do "${sourceLabel}" e extraia todas as tarefas acionáveis.
 

@@ -141,6 +141,8 @@ function upsertMessages(items = []) {
     const chatId = message?.key?.remoteJid
     if (!chatId) continue
 
+    upsertMessageContact(message)
+
     const list = messagesByChat.get(chatId) || []
     const messageId = message.key?.id
     if (messageId && list.some(item => item.key?.id === messageId)) continue
@@ -151,6 +153,19 @@ function upsertMessages(items = []) {
     messagesByChat.set(chatId, list)
 
     if (!chats.has(chatId)) chats.set(chatId, { id: chatId })
+  }
+}
+
+function upsertMessageContact(message) {
+  const remoteJid = message?.key?.remoteJid
+  const participant = message?.key?.participant
+  const pushName = String(message?.pushName || '').trim()
+  if (!pushName) return
+
+  for (const id of [remoteJid, participant].filter(Boolean)) {
+    if (id.endsWith('@g.us')) continue
+    const existing = contacts.get(id) || { id }
+    contacts.set(id, { ...existing, name: existing.name || pushName, notify: existing.notify || pushName })
   }
 }
 
