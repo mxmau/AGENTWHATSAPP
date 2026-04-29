@@ -57,6 +57,18 @@ function getLLMProviders() {
       }),
     },
     {
+      name: 'nvidia',
+      enabled: Boolean(process.env.NVIDIA_API_KEY),
+      model: process.env.NVIDIA_MODEL || 'meta/llama-3.1-8b-instruct',
+      generate: prompt => generateOpenAICompatible({
+        providerName: 'nvidia',
+        apiKey: process.env.NVIDIA_API_KEY,
+        baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions',
+        model: process.env.NVIDIA_MODEL || 'meta/llama-3.1-8b-instruct',
+        prompt,
+      }),
+    },
+    {
       name: 'openai',
       enabled: Boolean(process.env.OPENAI_API_KEY),
       model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
