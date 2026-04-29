@@ -279,7 +279,7 @@ function findChatByName(chatName) {
     .sort((a, b) => b.score - a.score)
 
   const best = candidates[0]
-  const minimumScore = needleTokens.length > 1 ? 45 : 30
+  const minimumScore = 25
   return {
     chat: best?.score >= minimumScore ? best.chat : null,
     score: best?.score || 0,
@@ -329,9 +329,12 @@ function scoreChatCandidate(needle, needleTokens, candidate) {
   if (needle.includes(haystack)) score += 70
 
   const matchedTokens = needleTokens.filter(token => haystackTokens.includes(token) || haystack.includes(token))
-  score += matchedTokens.length * 22
+  score += matchedTokens.length * 45
+
+  if (matchedTokens.length > 0) score += 25
 
   if (needleTokens.length && matchedTokens.length === needleTokens.length) score += 35
+  if (needleTokens.length > 1 && matchedTokens.length >= Math.ceil(needleTokens.length / 2)) score += 20
   if (candidate.id.includes('@g.us')) score += 5
 
   return score
@@ -347,7 +350,7 @@ function buildSearchableText(...values) {
 }
 
 function tokenizeSearchText(value) {
-  return normalizeSearchText(value).split(' ').filter(token => token.length >= 2)
+  return normalizeSearchText(value).split(' ').filter(token => token.length >= 2 || /^\d+$/.test(token))
 }
 
 function normalizeSearchText(value) {
