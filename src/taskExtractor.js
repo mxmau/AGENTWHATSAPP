@@ -30,9 +30,10 @@ CRITÉRIOS PARA EXTRAIR UMA TAREFA:
 2. Extraia mesmo que não exista prazo explícito.
 3. Extraia mensagens escritas pelo próprio usuário para si mesmo, pois elas geralmente são comandos ou lembretes.
 4. Extraia pedidos de criação de agentes, automações, materiais, respostas, designs, documentos, aulas, listas, pesquisas ou análises.
-5. Se a mensagem disser "criar", "fazer", "resolver", "lembrar", "avisar", "preparar", "montar", "gerar", "analisar", "responder", "comprar", "marcar" ou equivalente, trate como tarefa.
+5. Se a mensagem disser "preciso", "preciso preparar", "tenho que", "vou precisar", "quero", "criar", "fazer", "resolver", "lembrar", "avisar", "preparar", "montar", "gerar", "analisar", "responder", "comprar", "marcar" ou equivalente, trate como tarefa.
 6. Em grupos, extraia tarefas que pareçam relevantes para o usuário, escola, igreja, família ou trabalho.
-7. Não extraia saudações, agradecimentos, conversas soltas, memes, confirmações sem ação ou mensagens puramente informativas sem necessidade de acompanhamento.
+7. Quando alguém expressar uma necessidade, extraia a tarefa implícita e sugira um agente que facilitaria aquilo, mesmo que a pessoa não peça explicitamente "crie um agente".
+8. Não extraia saudações, agradecimentos, conversas soltas, memes, confirmações sem ação ou mensagens puramente informativas sem necessidade de acompanhamento.
 
 EXEMPLOS DO QUE DEVE VIRAR TAREFA:
 - "criar um agente de design" -> tarefa tipo "criar_agente", prioridade média, agente_sugerido "Agente de Design".
@@ -40,6 +41,10 @@ EXEMPLOS DO QUE DEVE VIRAR TAREFA:
 - "precisamos mandar a atividade até sexta" -> tarefa tipo "acao" com prazo sexta.
 - "faz uma arte para o culto" -> tarefa tipo "design".
 - "responder a professora sobre a reunião" -> tarefa tipo "resposta".
+- "preciso preparar uma atividade sobre frações" -> tarefa tipo "aula", agente_sugerido "Agente Preparador de Atividades".
+- "vou precisar organizar a escala dos obreiros" -> tarefa tipo "documento", agente_sugerido "Agente Organizador de Escalas".
+- "quero montar uma apresentação para domingo" -> tarefa tipo "design" ou "documento", agente_sugerido "Agente de Apresentações".
+- "tenho que analisar essas mensagens depois" -> tarefa tipo "analise", agente_sugerido "Agente Analista de Mensagens".
 
 EXEMPLOS DO QUE NÃO DEVE VIRAR TAREFA:
 - "bom dia".
