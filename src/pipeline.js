@@ -19,7 +19,10 @@ function getSources() {
 }
 
 export async function runPipeline() {
-  console.log(`\n[Pipeline] Iniciando execução — ${new Date().toLocaleString('pt-BR')}`)
+  const scanWindow = getScanWindow(HOURS_LOOKBACK)
+  console.log(`\n[Pipeline] Iniciando execução — ${formatRecifeDate(scanWindow.end)}`)
+  console.log(`[Pipeline] Janela de varredura: lendo mensagens desde ${formatRecifeDate(scanWindow.start)} até ${formatRecifeDate(scanWindow.end)} (America/Recife, últimas ${HOURS_LOOKBACK}h)`)
+  console.log('[Pipeline] Observação: a varredura reprocessa a janela inteira a cada execução, mesmo que execuções anteriores tenham retornado zero tarefas')
 
   const summary = {
     timestamp: new Date().toISOString(),
@@ -112,6 +115,24 @@ function logTaskPreview(tasks, sourceName) {
     const evidence = task.evidencia ? ` | evidência: ${task.evidencia}` : ''
     console.log(`[Tarefa] ${sourceName} | ${task.tipo} | ${task.prioridade} | ${task.titulo}${evidence}`)
   }
+}
+
+function getScanWindow(hoursBack) {
+  const end = new Date()
+  const start = new Date(end.getTime() - hoursBack * 3600 * 1000)
+  return { start, end }
+}
+
+function formatRecifeDate(date) {
+  return date.toLocaleString('pt-BR', {
+    timeZone: 'America/Recife',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 }
 
 async function sendTelegramSummary(summary) {
