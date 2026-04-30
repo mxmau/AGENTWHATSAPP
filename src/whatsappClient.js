@@ -555,18 +555,22 @@ function scoreChatCandidate(needle, needleTokens, candidate) {
   let score = 0
 
   if (!needle || !haystack) return 0
+  const exactOrPartialMatch = haystack === needle || haystack.includes(needle) || needle.includes(haystack)
+  const matchedTokens = needleTokens.filter(token => haystackTokens.includes(token) || haystack.includes(token))
+  const hasTokenMatch = matchedTokens.length > 0
+
+  if (!exactOrPartialMatch && !hasTokenMatch) return 0
+
   if (haystack === needle) score += 120
   if (haystack.includes(needle)) score += 90
   if (needle.includes(haystack)) score += 70
 
-  const matchedTokens = needleTokens.filter(token => haystackTokens.includes(token) || haystack.includes(token))
   score += matchedTokens.length * 45
-
-  if (matchedTokens.length > 0) score += 25
+  if (hasTokenMatch) score += 25
 
   if (needleTokens.length && matchedTokens.length === needleTokens.length) score += 35
   if (needleTokens.length > 1 && matchedTokens.length >= Math.ceil(needleTokens.length / 2)) score += 20
-  if (candidate.id.includes('@g.us')) score += 5
+  if (candidate.id.includes('@g.us') && score >= 90) score += 5
 
   return score
 }
