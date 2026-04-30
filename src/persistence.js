@@ -41,6 +41,29 @@ export async function initPersistence() {
   `)
 
   await pool.query(`
+    create table if not exists whatsapp_messages (
+      id text primary key,
+      chat_id text not null,
+      chat_name text,
+      sender text,
+      body text not null,
+      timestamp_ms bigint not null,
+      timestamp_at timestamptz not null,
+      created_at timestamptz not null default now()
+    )
+  `)
+
+  await pool.query(`
+    create index if not exists whatsapp_messages_chat_timestamp_idx
+    on whatsapp_messages (chat_id, timestamp_ms)
+  `)
+
+  await pool.query(`
+    create index if not exists whatsapp_messages_timestamp_idx
+    on whatsapp_messages (timestamp_ms)
+  `)
+
+  await pool.query(`
     create index if not exists app_logs_recife_date_idx
     on app_logs (recife_date, created_at)
   `)
@@ -153,4 +176,69 @@ export async function restoreDirectory(dirPath, namespace) {
 
   console.log(`[Persistence] ${result.rows.length} arquivos restaurados de ${namespace}`)
   return true
+}
+
+export async function saveWhatsAppMessages(messages = []) {
+  if (!pool || !messages.length) return 0
+  await initPersistence()
+
+  let saved = 0
+  for (const message of messages) {
+    if (!message?.id || !message?.chatId || !message?.body || !message?.timestampMs) continue
+    await pool.query(
+      `insert into whatsapp_messages (id, chat_id, chat_name, sender, body, timestamp_ms, timestamp_at)
+       values ($1, $2, $3, $4, $5, $6, to_timestamp($6 / 1000.0))
+       on conflict (id) do update set
+         chat_name = coalesce(excluded.chat_name, whatsapp_messages.chat_name),
+         sender = coalesce(excluded.sender, whatsapp_messages.sender),
+         body = excluded.body`,
+      [message.id, message.chatId, message.chatName || null, message.sender || null, message.body, message.timestampMs],
+    )
+    saved++
+  }
+
+  return saved
+}
+
+export async function listWhatsAppMessages(chatIds = [], cutoffTimestampMs = 0) {
+  if (!pool || !chatIds.length) return []
+  await initPersistence()
+
+  const result = await pool.query(
+    `select id, chat_id, chat_name, sender, body, timestamp_ms
+     from whatsapp_messages
+     where chat_id = any($1::text[])
+       and timestamp_ms > $2
+       and body <> ''
+     order by timestamp_ms asc`,
+    [chatIds, cutoffTimestampMs],
+  )
+
+  return result.rows.map(row => ({
+    id: row.id,
+    chatId: row.chat_id,
+    chatName: row.chat_name,
+    from: row.sender || 'desconhecido',
+    body: row.body,
+    timestampMs: Number(row.timestamp_ms),
+    timestamp: new Date(Number(row.timestamp_ms)).toLocaleString('pt-BR', { timeZone: 'America/Recife' }),
+  }))
+}
+
+export async function getWhatsAppMessageStats(chatIds = []) {
+  if (!pool || !chatIds.length) return new Map()
+  await initPersistence()
+
+  const result = await pool.query(
+    `select chat_id, count(*)::int as message_count, max(timestamp_ms)::bigint as last_timestamp_ms
+     from whatsapp_messages
+     where chat_id = any($1::text[])
+     group by chat_id`,
+    [chatIds],
+  )
+
+  return new Map(result.rows.map(row => [row.chat_id, {
+    messageCount: Number(row.message_count || 0),
+    lastMessageAt: row.last_timestamp_ms ? new Date(Number(row.last_timestamp_ms)).toISOString() : null,
+  }]))
 }

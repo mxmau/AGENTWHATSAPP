@@ -8,7 +8,7 @@ import qrcode from 'qrcode'
 import { EventEmitter } from 'events'
 import path from 'path'
 import pino from 'pino'
-import { restoreDirectory, saveDirectory } from './persistence.js'
+import { getWhatsAppMessageStats, listWhatsAppMessages, restoreDirectory, saveDirectory, saveWhatsAppMessages } from './persistence.js'
 
 export const clientEvents = new EventEmitter()
 
@@ -137,6 +137,8 @@ function upsertContacts(items = []) {
 }
 
 function upsertMessages(items = []) {
+  const normalizedMessages = []
+
   for (const message of items) {
     const chatId = message?.key?.remoteJid
     if (!chatId) continue
@@ -145,14 +147,41 @@ function upsertMessages(items = []) {
 
     const list = messagesByChat.get(chatId) || []
     const messageId = message.key?.id
-    if (messageId && list.some(item => item.key?.id === messageId)) continue
-
-    list.push(message)
-    list.sort((a, b) => Number(a.messageTimestamp || 0) - Number(b.messageTimestamp || 0))
-    if (list.length > MAX_MESSAGES_PER_CHAT) list.splice(0, list.length - MAX_MESSAGES_PER_CHAT)
-    messagesByChat.set(chatId, list)
+    if (!messageId || !list.some(item => item.key?.id === messageId)) {
+      list.push(message)
+      list.sort((a, b) => Number(a.messageTimestamp || 0) - Number(b.messageTimestamp || 0))
+      if (list.length > MAX_MESSAGES_PER_CHAT) list.splice(0, list.length - MAX_MESSAGES_PER_CHAT)
+      messagesByChat.set(chatId, list)
+    }
 
     if (!chats.has(chatId)) chats.set(chatId, { id: chatId })
+
+    const normalizedMessage = normalizeMessageForPersistence(message)
+    if (normalizedMessage) normalizedMessages.push(normalizedMessage)
+  }
+
+  if (normalizedMessages.length) {
+    saveWhatsAppMessages(normalizedMessages)
+      .then(count => console.log(`[WhatsApp] ${count} mensagens persistidas no banco`))
+      .catch(err => console.warn('[WhatsApp] Erro ao persistir mensagens:', err.message))
+  }
+}
+
+
+function normalizeMessageForPersistence(message) {
+  const chatId = message?.key?.remoteJid
+  const messageId = message?.key?.id
+  const body = getMessageBody(message).trim()
+  const timestampMs = Number(message?.messageTimestamp || 0) * 1000
+  if (!chatId || !messageId || !body || !timestampMs) return null
+
+  return {
+    id: `${chatId}:${messageId}`,
+    chatId,
+    chatName: getChatDisplayName(chats.get(chatId) || { id: chatId }),
+    sender: getSenderName(message),
+    body,
+    timestampMs,
   }
 }
 
@@ -207,7 +236,7 @@ export async function fetchRecentMessagesById(chatId, sourceName, hoursBack = 12
     }
   }
 
-  const messages = extractMessagesFromStore(candidate.id, cutoff, candidate.displayName)
+  const messages = await extractMessagesForChat(candidate.id, cutoff, candidate.displayName)
   console.log(`[WhatsApp] Chat lido por id para "${sourceName}": "${candidate.displayName}" | mensagens ${messages.length} | id ${candidate.id}`)
   logCandidateMessages(sourceName, candidate.displayName, messages)
 
@@ -241,7 +270,7 @@ export async function fetchRecentMessages(chatName, hoursBack = 12) {
     console.warn(`[WhatsApp] ${reason}: "${chatName}"`)
     console.warn(`[WhatsApp] Candidatos para "${chatName}": ${formatChatCandidates(match?.candidates || [])}`)
 
-    const diagnosticCandidates = readDiagnosticCandidateMessages(chatName, match?.candidates || [], cutoff)
+    const diagnosticCandidates = await readDiagnosticCandidateMessages(chatName, match?.candidates || [], cutoff)
     return {
       messages: [],
       status,
@@ -254,7 +283,7 @@ export async function fetchRecentMessages(chatName, hoursBack = 12) {
     }
   }
 
-  const messages = extractMessagesFromStore(selected.id, cutoff, selected.displayName)
+  const messages = await extractMessagesForChat(selected.id, cutoff, selected.displayName)
   console.log(`[WhatsApp] Chat lido para "${chatName}": "${selected.displayName}" | score ${selected.score} | mensagens ${messages.length} | id ${selected.id}`)
   logCandidateMessages(chatName, selected.displayName, messages)
 
@@ -287,32 +316,38 @@ export async function diagnoseChatCandidates(chatName, hoursBack = 12) {
   const match = findChatByName(chatName)
   return {
     query: chatName,
-    candidates: readDiagnosticCandidateMessages(chatName, match?.candidates || [], cutoff),
+    candidates: await readDiagnosticCandidateMessages(chatName, match?.candidates || [], cutoff),
   }
 }
 
-export function listKnownChats({ query = '', limit = 30, includeMessages = false, hoursBack = 12 } = {}) {
+export async function listKnownChats({ query = '', limit = 30, includeMessages = false, hoursBack = 12 } = {}) {
   const needle = normalizeSearchText(query)
   const cutoff = Math.floor((Date.now() - hoursBack * 3600 * 1000) / 1000)
-  const allCandidates = buildChatSearchCandidates()
-    .map(candidate => ({
-      id: candidate.id,
-      name: candidate.displayName,
-      isGroup: candidate.id.includes('@g.us'),
-      messageCount: (messagesByChat.get(candidate.id) || []).length,
-      lastMessageAt: getLastMessageAt(candidate.id),
-      score: needle ? scoreChatCandidate(needle, tokenizeSearchText(query), candidate) : 0,
-    }))
+  const candidates = buildChatSearchCandidates()
+  const stats = await getWhatsAppMessageStats(candidates.map(candidate => candidate.id))
+  const allCandidates = candidates
+    .map(candidate => {
+      const memoryCount = (messagesByChat.get(candidate.id) || []).length
+      const persistedStats = stats.get(candidate.id) || {}
+      return {
+        id: candidate.id,
+        name: candidate.displayName,
+        isGroup: candidate.id.includes('@g.us'),
+        messageCount: Math.max(memoryCount, persistedStats.messageCount || 0),
+        lastMessageAt: persistedStats.lastMessageAt || getLastMessageAt(candidate.id),
+        score: needle ? scoreChatCandidate(needle, tokenizeSearchText(query), candidate) : 0,
+      }
+    })
     .filter(candidate => !needle || candidate.score > 0)
     .sort((a, b) => (b.score - a.score) || (new Date(b.lastMessageAt || 0) - new Date(a.lastMessageAt || 0)))
     .slice(0, Number(limit) || 30)
 
   if (!includeMessages) return allCandidates
 
-  return allCandidates.map(candidate => ({
+  return Promise.all(allCandidates.map(async candidate => ({
     ...candidate,
-    recentMessages: extractMessagesFromStore(candidate.id, cutoff, candidate.name).slice(-10),
-  }))
+    recentMessages: (await extractMessagesForChat(candidate.id, cutoff, candidate.name)).slice(-10),
+  })))
 }
 
 function logCandidateMessages(sourceName, candidateName, messages) {
@@ -345,7 +380,8 @@ export async function fetchSelfMessages(hoursBack = 12) {
 
   const cutoff = Math.floor((Date.now() - hoursBack * 3600 * 1000) / 1000)
   const selfCandidates = getSelfChatCandidates()
-  const messages = selfCandidates.flatMap(candidate => extractMessagesFromStore(candidate.id, cutoff, candidate.name))
+  const messagesByCandidate = await Promise.all(selfCandidates.map(candidate => extractMessagesForChat(candidate.id, cutoff, candidate.name)))
+  const messages = messagesByCandidate.flat()
 
   const uniqueMessages = new Map()
   for (const message of messages) {
@@ -433,11 +469,11 @@ function getChatCandidateById(chatId) {
   }
 }
 
-function readDiagnosticCandidateMessages(sourceName, candidates, cutoff) {
+async function readDiagnosticCandidateMessages(sourceName, candidates, cutoff) {
   const limit = parseInt(process.env.DIAGNOSTIC_CANDIDATE_LIMIT || '8')
 
-  return candidates.slice(0, limit).map(candidate => {
-    const messages = extractMessagesFromStore(candidate.id, cutoff, candidate.name)
+  return Promise.all(candidates.slice(0, limit).map(async candidate => {
+    const messages = await extractMessagesForChat(candidate.id, cutoff, candidate.name)
     console.log(`[WhatsApp/Diagnóstico] ${sourceName} | candidato "${candidate.name}" | score ${candidate.score} | mensagens ${messages.length} | id ${candidate.id}`)
     logCandidateMessages(sourceName, candidate.name, messages)
     return {
@@ -447,7 +483,7 @@ function readDiagnosticCandidateMessages(sourceName, candidates, cutoff) {
       messages: messages.length,
       recentMessages: messages.slice(-10),
     }
-  })
+  }))
 }
 
 function getLastMessageAt(chatId) {
@@ -583,9 +619,25 @@ function extractMessagesFromStore(chatId, cutoffTimestamp, chatName) {
       from: getSenderName(message),
       body: getMessageBody(message),
       timestampMs: Number(message.messageTimestamp) * 1000,
-      timestamp: new Date(Number(message.messageTimestamp) * 1000).toLocaleString('pt-BR'),
+      timestamp: new Date(Number(message.messageTimestamp) * 1000).toLocaleString('pt-BR', { timeZone: 'America/Recife' }),
       chatName,
     }))
+}
+
+async function extractMessagesForChat(chatId, cutoffTimestamp, chatName) {
+  const cutoffTimestampMs = cutoffTimestamp * 1000
+  const persistedMessages = await listWhatsAppMessages([chatId], cutoffTimestampMs)
+  const memoryMessages = extractMessagesFromStore(chatId, cutoffTimestamp, chatName)
+  const uniqueMessages = new Map()
+
+  for (const message of [...persistedMessages, ...memoryMessages]) {
+    uniqueMessages.set(`${message.timestampMs}:${message.from}:${message.body}`, {
+      ...message,
+      chatName: message.chatName || chatName,
+    })
+  }
+
+  return [...uniqueMessages.values()].sort((a, b) => a.timestampMs - b.timestampMs)
 }
 
 function getSenderName(message) {

@@ -240,7 +240,7 @@ app.get('/debug/chats', async (req, res) => {
     res.json({
       query,
       hoursBack,
-      chats: listKnownChats({ query, limit, includeMessages, hoursBack }),
+      chats: await listKnownChats({ query, limit, includeMessages, hoursBack }),
     })
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message })
